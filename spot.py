@@ -1,4 +1,5 @@
-# النسخة المطورة من سكربت تحليل العملات سبوت (مع جني أرباح جزئي + فلترة + مؤشرات إضافية)
+# النسخة المعدلة من سكربت تحليل العملات سبوت (متوافقة مع Render Background Worker)
+
 import sys
 import asyncio
 import json
@@ -30,6 +31,11 @@ BOLLINGER_STDDEV = int(os.environ.get("BOLLINGER_STDDEV", 2))
 bot = Bot(token=TELEGRAM_TOKEN)
 STABLECOINS = ["USDT", "USDC", "BUSD", "TUSD", "DAI", "FDUSD", "EUR", "TRY", "GBP", "AUD"]
 
+# ملفات التخزين المؤقت في مجلد /tmp
+DATA_DIR = "/tmp"
+SENT_TODAY_FILE = os.path.join(DATA_DIR, "sent_today.json")
+OPEN_POSITIONS_FILE = os.path.join(DATA_DIR, "open_positions.json")
+
 def load_json_file(filename):
     try:
         with open(filename, "r") as f:
@@ -41,8 +47,8 @@ def save_json_file(filename, data):
     with open(filename, "w") as f:
         json.dump(data, f, indent=2)
 
-sent_today = load_json_file("sent_today.json")
-open_positions = load_json_file("open_positions.json")
+sent_today = load_json_file(SENT_TODAY_FILE)
+open_positions = load_json_file(OPEN_POSITIONS_FILE)
 
 def calculate_macd(series, fast=12, slow=26, signal=9):
     ema_fast = series.ewm(span=fast).mean()
@@ -88,11 +94,9 @@ async def analyze_symbol(exchange, symbol):
     today = now.strftime('%Y-%m-%d')
     last_sent = sent_today.get(symbol)
 
-    # الحد الأقصى اليومي
     if sum(1 for v in sent_today.values() if v["time"].startswith(today)) >= DAILY_MAX_POSITIONS:
         return
 
-    # فترة التهدئة (Cooldown)
     if last_sent:
         sent_time = datetime.fromisoformat(last_sent["time"])
         if (now - sent_time) < timedelta(hours=COOLDOWN_HOURS):
@@ -126,8 +130,8 @@ async def analyze_symbol(exchange, symbol):
                 "partial_sell_flags": [],
                 "stopped": False
             }
-            save_json_file("sent_today.json", sent_today)
-            save_json_file("open_positions.json", open_positions)
+            save_json_file(SENT_TODAY_FILE, sent_today)
+            save_json_file(OPEN_POSITIONS_FILE, open_positions)
 
     except Exception as e:
         print(f"[{datetime.utcnow()}] [!] فشل تحليل {symbol}: {e}")
@@ -213,7 +217,7 @@ async def monitor_targets(exchange):
                     await update_signal_message(symbol, price, data)
                     if data.get("stopped"):
                         del open_positions[symbol]
-                    save_json_file("open_positions.json", open_positions)
+                    save_json_file(OPEN_POSITIONS_FILE, open_positions)
             except Exception as e:
                 print(f"[!] خطأ في مراقبة {symbol}: {e}")
 
